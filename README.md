@@ -87,8 +87,6 @@ SILICONFLOW_API_KEY=xxxxxxx
 - `TAVILY_API_KEY`：Tavily 控制台
 - `SILICONFLOW_API_KEY`：硅基流动控制台
 
-不要把真实密钥、小智账号、密码、SSH 私钥或 MCP Token 写进代码、Git 或文档。
-
 ## 使用
 
 ### 启动 MCP 服务
@@ -158,10 +156,3 @@ sudo systemctl enable --now xiaozhi-search
 - `deploy/`：systemd 与服务器运维脚本
 - `tests/`：MCP、检索、总结与模型测试
 
-## 安全清单
-
-- 仓库不保存真实密钥或账号
-- `.env`、数据库、论文原文、Word 交付物和私钥默认不上传
-- 人员变更时轮换小智账号、MCP Token、Tavily Key、硅基流动 Key 与 SSH 密钥
-- 只把 MCP Token 交给需要接入的服务器
-- 服务器环境文件权限应为 `600`
