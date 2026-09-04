@@ -1,6 +1,7 @@
 """Verify that the unified MCP gateway routes every query to one custom source."""
 
 import sys
+import asyncio
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -8,25 +9,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import web_search
 
 
-def main() -> None:
+async def main() -> None:
     original_knowledge = web_search.knowledge_search
     original_web = web_search.web_search
     calls: list[tuple[str, str]] = []
 
     def fake_knowledge(query: str) -> dict:
         calls.append(("knowledge", query))
-        return {"success": True, "result": [{"title": "private paper"}]}
+        return {"success": True, "evidence_status":"candidate", "result": [{"title": "private paper"}]}
 
-    def fake_web(query: str) -> dict:
+    async def fake_web(query: str) -> dict:
         calls.append(("web", query))
         return {"success": True, "result": [{"title": "web page"}]}
 
     try:
         web_search.knowledge_search = fake_knowledge
         web_search.web_search = fake_web
-        private_result = web_search.query_information("郭雷院士关于自适应控制有哪些论文？")
-        web_result = web_search.query_information("今天北京有什么重要新闻？")
-        forced_result = web_search.query_information("解释一个一般概念", source="knowledge")
+        private_result = await web_search.query_information("郭雷院士关于自适应控制有哪些论文？")
+        web_result = await web_search.query_information("今天北京有什么重要新闻？")
+        forced_result = await web_search.query_information("解释一个一般概念", source="knowledge")
 
         assert private_result["route"] == "knowledge"
         assert private_result["data_source"] == "private_guolei_knowledge_base"
@@ -46,4 +47,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

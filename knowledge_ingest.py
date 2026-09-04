@@ -350,7 +350,12 @@ def _split_text(text: str, *, target: int = 1500, overlap: int = 220) -> list[st
 def _connect_writable(database_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL")
+    # Published corpus lives in /opt under ProtectSystem=strict. WAL would
+    # require sidecar creation even on an otherwise read-only connection.
+    mode = connection.execute("PRAGMA journal_mode=DELETE").fetchone()[0]
+    if mode != "delete":
+        connection.close()
+        raise RuntimeError("Knowledge database must use DELETE journal mode before publication")
     connection.enable_load_extension(True)
     sqlite_vec.load(connection)
     connection.enable_load_extension(False)

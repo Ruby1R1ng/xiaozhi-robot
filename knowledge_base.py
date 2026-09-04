@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import httpx
+from formula_evidence import lookup as lookup_formula, relevance as assess_relevance
 
 try:
     import sqlite_vec
@@ -275,6 +276,10 @@ class KnowledgeBase:
                 "result": [],
             }
 
+        reviewed = lookup_formula(self.database_path, query)
+        if reviewed is not None:
+            return reviewed
+
         started = time.perf_counter()
         vector: list[float] | None = None
         embedding_error = ""
@@ -316,6 +321,25 @@ class KnowledgeBase:
                 ).fetchall()
                 fused = [(int(row[0]), 0.0) for row in title_rows]
 
+            # A paper-level hit is not a passage-level hit. Re-select within leading
+            # papers for precise questions; avoid returning only title/reference chunks.
+            if any(term in query.casefold() for term in ('公式', '定理', '证明', '常数', 'theorem', 'proof', 'constant')):
+                improved = []
+                for representative, score in fused[:max(limit * 3, limit)]:
+                    paper = connection.execute('SELECT paper_id FROM chunks WHERE id=?', (representative,)).fetchone()
+                    candidates = connection.execute('SELECT id,section,text FROM chunks WHERE paper_id=?', (paper[0],)).fetchall()
+                    terms = re.findall(r'[a-z]{4,}', query.casefold())
+                    if '定理' in query or '常数' in query: terms += ['theorem', 'critical']
+                    if '证明' in query: terms += ['proof']
+                    def passage_score(row):
+                        text = row['text'].casefold()
+                        value = sum(min(text.count(term), 3) for term in set(terms))
+                        value -= 4 if row['section'] == 'paper_overview' else 0
+                        value -= 8 if 'references' in text else 0
+                        return value
+                    best = max(candidates, key=passage_score)
+                    improved.append((int(best['id']), score))
+                fused = improved + fused[max(limit * 3, limit):]
             selected_ids = [chunk_id for chunk_id, _ in fused[: max(limit * 3, limit)]]
             score_map = dict(fused)
             records: list[dict[str, Any]] = []
@@ -368,6 +392,8 @@ class KnowledgeBase:
         warning = ""
         if any(item["extraction_method"] == "ocr" for item in records):
             warning = "部分证据来自扫描件OCR；涉及精确公式时请核对所标页码的原PDF。"
+        if any(term in query.casefold() for term in ('公式', '定理', '证明', '常数', 'theorem', 'proof', 'constant')):
+            warning = '这些原始片段尚未逐式核验；文字层也可能丢失根号、分数线或不等号，不能据此断言精确公式。'
         if embedding_error:
             warning = (warning + " 当前语义检索不可用，已降级为关键词检索。").strip()
 
@@ -375,9 +401,12 @@ class KnowledgeBase:
             f"[{index}] {item['title']} ({item['year']}), p.{item['page_start']}"
             for index, item in enumerate(records, start=1)
         ]
+        evidence_status, matched_terms = assess_relevance(query, records)
         return {
             "success": bool(records),
             "query": query,
+            "evidence_status": evidence_status,
+            "relevance_terms": matched_terms,
             "count": len(records),
             "summary": "请仅依据以下论文片段回答，并在结论后保留[1]、[2]形式的来源编号。",
             "warning": warning,
